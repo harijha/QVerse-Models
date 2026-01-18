@@ -19,8 +19,11 @@ on:
           - translategemma-4b
           - outetts-0.3-500m
 
+# Required permissions for creating releases
+permissions:
+  contents: write
+
 env:
-  # Model mapping: model-id -> HuggingFace URL
   MODELS: |
     {
       "gemma-3n-e2b": {
@@ -83,8 +86,10 @@ jobs:
   upload-model:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
+      max-parallel: 1
       matrix:
-        model: ${{ inputs.model == 'all' && fromJson('["gemma-3n-e2b", "gemma-3n-e4b", "llama-4-scout", "ministral-3-3b", "phi-4-mini", "phi-4-multimodal", "qwen3-0.6b", "translategemma-4b", "outetts-0.3-500m"]') || fromJson(format('["{0}"]', inputs.model)) }}
+        model: ${{ inputs.model == 'all' && fromJson('["qwen3-0.6b", "outetts-0.3-500m", "llama-4-scout", "gemma-3n-e4b", "ministral-3-3b", "translategemma-4b", "phi-4-mini", "phi-4-multimodal", "gemma-3n-e2b"]') || fromJson(format('["{0}"]', inputs.model)) }}
     
     steps:
       - name: Parse model config
