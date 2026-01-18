@@ -1,0 +1,138 @@
+name: Upload Models to Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Select model to upload'
+        required: true
+        type: choice
+        options:
+          - all
+          - gemma-3n-e2b
+          - gemma-3n-e4b
+          - llama-4-scout
+          - ministral-3-3b
+          - phi-4-mini
+          - phi-4-multimodal
+          - qwen3-0.6b
+          - translategemma-4b
+          - outetts-0.3-500m
+
+env:
+  # Model mapping: model-id -> HuggingFace URL
+  MODELS: |
+    {
+      "gemma-3n-e2b": {
+        "url": "https://huggingface.co/unsloth/gemma-3n-E2B-it-GGUF/resolve/main/gemma-3n-E2B-it-Q4_K_M.gguf",
+        "filename": "gemma-3n-e2b.gguf",
+        "release": "v1.0.0-edge",
+        "size": "2.6GB"
+      },
+      "gemma-3n-e4b": {
+        "url": "https://huggingface.co/unsloth/gemma-3n-E4B-it-GGUF/resolve/main/gemma-3n-E4B-it-Q4_K_M.gguf",
+        "filename": "gemma-3n-e4b.gguf",
+        "release": "v1.0.0-edge",
+        "size": "1.0GB"
+      },
+      "llama-4-scout": {
+        "url": "https://huggingface.co/unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF/resolve/main/Llama-4-Scout-17B-16E-Instruct-UD-Q2_K_XL.gguf",
+        "filename": "llama-4-scout.gguf",
+        "release": "v1.0.0-edge",
+        "size": "638MB"
+      },
+      "ministral-3-3b": {
+        "url": "https://huggingface.co/tensorblock/Ministral-3b-instruct-GGUF/resolve/main/Ministral-3b-instruct-Q4_K_M.gguf",
+        "filename": "ministral-3-3b.gguf",
+        "release": "v1.0.0-edge",
+        "size": "1.8GB"
+      },
+      "phi-4-mini": {
+        "url": "https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf",
+        "filename": "phi-4-mini.gguf",
+        "release": "v1.0.0-edge",
+        "size": "2.2GB"
+      },
+      "phi-4-multimodal": {
+        "url": "https://huggingface.co/unsloth/Phi-4-multimodal-instruct-GGUF/resolve/main/Phi-4-multimodal-instruct-Q4_K_M.gguf",
+        "filename": "phi-4-multimodal.gguf",
+        "release": "v1.0.0-edge",
+        "size": "2.5GB"
+      },
+      "qwen3-0.6b": {
+        "url": "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
+        "filename": "qwen3-0.6b.gguf",
+        "release": "v1.0.0-edge",
+        "size": "462MB"
+      },
+      "translategemma-4b": {
+        "url": "https://huggingface.co/mradermacher/translategemma-4b-it-GGUF/resolve/main/translategemma-4b-it.Q4_K_M.gguf",
+        "filename": "translategemma-4b.gguf",
+        "release": "v1.0.0-edge",
+        "size": "2.0GB"
+      },
+      "outetts-0.3-500m": {
+        "url": "https://huggingface.co/OuteAI/OuteTTS-0.3-500M-GGUF/resolve/main/OuteTTS-0.3-500M-Q4_K_M.gguf",
+        "filename": "outetts-0.3-500m.gguf",
+        "release": "v1.0.0-tts",
+        "size": "385MB"
+      }
+    }
+
+jobs:
+  upload-model:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        model: ${{ inputs.model == 'all' && fromJson('["gemma-3n-e2b", "gemma-3n-e4b", "llama-4-scout", "ministral-3-3b", "phi-4-mini", "phi-4-multimodal", "qwen3-0.6b", "translategemma-4b", "outetts-0.3-500m"]') || fromJson(format('["{0}"]', inputs.model)) }}
+    
+    steps:
+      - name: Parse model config
+        id: config
+        run: |
+          MODEL_CONFIG=$(echo '${{ env.MODELS }}' | jq -r '."${{ matrix.model }}"')
+          echo "url=$(echo $MODEL_CONFIG | jq -r '.url')" >> $GITHUB_OUTPUT
+          echo "filename=$(echo $MODEL_CONFIG | jq -r '.filename')" >> $GITHUB_OUTPUT
+          echo "release=$(echo $MODEL_CONFIG | jq -r '.release')" >> $GITHUB_OUTPUT
+          echo "size=$(echo $MODEL_CONFIG | jq -r '.size')" >> $GITHUB_OUTPUT
+          
+      - name: Download model from HuggingFace
+        run: |
+          echo "📥 Downloading ${{ matrix.model }} (${{ steps.config.outputs.size }})..."
+          echo "Source: ${{ steps.config.outputs.url }}"
+          curl -L -o "${{ steps.config.outputs.filename }}" "${{ steps.config.outputs.url }}" --progress-bar
+          ls -lh "${{ steps.config.outputs.filename }}"
+          
+      - name: Create release if needed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="${{ steps.config.outputs.release }}"
+          if ! gh release view "$RELEASE_TAG" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Creating release $RELEASE_TAG..."
+            if [[ "$RELEASE_TAG" == *"tts"* ]]; then
+              TITLE="TTS Models"
+              NOTES="Text-to-Speech models for QVerse Mobile App"
+            else
+              TITLE="Edge AI Models"
+              NOTES="On-device LLM models for QVerse Mobile App"
+            fi
+            gh release create "$RELEASE_TAG" \
+              --repo ${{ github.repository }} \
+              --title "$TITLE" \
+              --notes "$NOTES"
+          fi
+          
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "📤 Uploading ${{ steps.config.outputs.filename }} to ${{ steps.config.outputs.release }}..."
+          gh release upload "${{ steps.config.outputs.release }}" "${{ steps.config.outputs.filename }}" \
+            --repo ${{ github.repository }} \
+            --clobber
+          
+      - name: Print download URL
+        run: |
+          echo "✅ Upload complete!"
+          echo "Download URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.config.outputs.release }}/${{ steps.config.outputs.filename }}"
